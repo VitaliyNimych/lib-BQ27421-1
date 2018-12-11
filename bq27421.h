@@ -3,8 +3,7 @@
 #ifdef __cplusplus
  extern "C" {
 #endif
-
-#include "stm32f4xx_hal.h"
+#include "stm32l4xx_hal.h"
 #include <stdbool.h>
 
 #define HAL_I2C_INSTANCE                    hi2c2
@@ -129,6 +128,7 @@ bool bq27421_i2c_control_read( uint16_t subcommand, uint16_t *data );
 bool bq27421_i2c_write_data_block( uint8_t offset, uint8_t *data, uint8_t bytes );
 bool bq27421_i2c_read_data_block( uint8_t offset, uint8_t *data, uint8_t bytes );
 
+char *bq27421_execute_fs(char *pFS);
 #ifdef __cplusplus
 }
 #endif

@@ -1,6 +1,9 @@
 #include "bq27421.h"
 #include "i2c.h"
+#include <string.h>
+#include <stdlib.h> 
 
+ 
 bool bq27421_i2c_command_write( uint8_t command, uint16_t data )
 {
     HAL_StatusTypeDef ret;
@@ -174,7 +177,6 @@ bool bq27421_init( uint16_t designCapacity_mAh, uint16_t terminateVoltage_mV, ui
 
     designEnergy_mWh = 3.7 * designCapacity_mAh;
     taperRate = designCapacity_mAh / ( 0.1 * taperCurrent_mA );
-
     // Unseal gauge
     bq27421_i2c_control_write( BQ27421_CONTROL_UNSEAL );
     bq27421_i2c_control_write( BQ27421_CONTROL_UNSEAL );
@@ -577,3 +579,112 @@ bool bq27421_readStateofHealth_percent( uint16_t *soh_percent )
 
     return true;
 }
+
+bool bq27421_write(unsigned char nRegister, uint8_t *pData, int nDataLength)
+{
+  HAL_StatusTypeDef ret;
+  
+  ret = HAL_I2C_Mem_Write(&HAL_I2C_INSTANCE, (uint16_t)BQ27421_I2C_ADDRESS, nRegister, I2C_MEMADD_SIZE_8BIT, pData, nDataLength, HAL_BQ27421_TIMEOUT);
+  
+  if( ret != HAL_OK )
+  {
+    return false;
+  }
+  
+  HAL_Delay( BQ27421_DELAY );
+    
+  return true;
+}
+
+bool bq27421_read(unsigned char nRegister, uint8_t *pDataFromGauge, int nDataLength)
+{
+  HAL_StatusTypeDef ret;
+  
+  ret = HAL_I2C_Mem_Read(&HAL_I2C_INSTANCE, (uint16_t)BQ27421_I2C_ADDRESS, nRegister, I2C_MEMADD_SIZE_8BIT, pDataFromGauge, nDataLength, HAL_BQ27421_TIMEOUT);
+  if( ret != HAL_OK )
+  {
+    return false;
+  } 
+  HAL_Delay( BQ27421_DELAY );
+  
+  return true;
+}
+//gauge_execute_fs: execute a flash stream file
+//pHandle: handle to communications adapter
+//pFS: zero-terminated buffer with flash stream file
+//return value: success: pointer to end of flash stream file
+//error: point of error in flash stream file
+char *bq27421_execute_fs(char *pFS)
+{
+  int nLength = strlen(pFS);
+  char pDataFromGauge[50];
+  int nDataLength;
+  char pBuf[16];
+  char pData[32];
+  int n, m;
+  char *pEnd = NULL;
+  char *pErr;
+  bool bWriteCmd = false;
+  unsigned char nRegister;
+  m = 0;
+  for (n = 0; n < nLength; n++)
+    if (pFS[n] != ' ') pFS[m++] = pFS[n];
+  pEnd = pFS + m;
+  pEnd[0] = 0;
+  do
+  {
+    switch (*pFS)
+    {
+    case ';':
+      break;
+    case 'W':
+    case 'C':
+      bWriteCmd = *pFS == 'W';
+      pFS++;
+      if ((*pFS) != ':') return pFS;
+      pFS++;
+      n = 0;
+      while ((pEnd - pFS > 2) && (n < sizeof(pData) + 2) &&(*pFS != '\n'))
+      {
+        pBuf[0] = *(pFS++);
+        pBuf[1] = *(pFS++);
+        pBuf[2] = 0;
+        m = strtoul(pBuf, &pErr, 16);
+        if (*pErr) return (pFS - 2);
+//        if (n == 0) gauge_address(pHandle, m);
+        if (n == 1) nRegister = m;
+        if (n > 1) pData[n - 2] = m;
+        n++;
+      }
+      if (n < 3) return pFS;
+      nDataLength = n - 2;
+      if (bWriteCmd)
+        bq27421_write(nRegister, pData, nDataLength);
+      else
+      {
+        bq27421_read(nRegister, pDataFromGauge, nDataLength);
+        if (memcmp(pData, pDataFromGauge, nDataLength)) return pFS;
+      }
+      break;
+    case 'X':
+      pFS++;
+      if ((*pFS) != ':') return pFS;
+      pFS++;
+      n = 0;
+      while ((pFS != pEnd) && (*pFS != '\n') &&(n <sizeof(pBuf) - 1))
+      {
+        pBuf[n++] = *pFS;
+        pFS++;
+      }
+      pBuf[n] = 0;
+      n = atoi(pBuf);
+      HAL_Delay( n * BQ27421_DELAY );
+      break;
+    default: return pFS;
+    }
+    while ((pFS != pEnd) && (*pFS != '\n')) pFS++; //skip to next line
+    if (pFS != pEnd) pFS++;
+  } while (pFS != pEnd);
+  return pFS;
+}
+
